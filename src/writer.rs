@@ -34,6 +34,8 @@ pub enum Error {
     PropertyValueTooLarge,
     /// Total size must fit in 32 bits.
     TotalSizeTooLarge,
+    /// Output size larger than requested total size
+    TotalSizeTooSmall,
     /// Strings cannot contain NUL.
     InvalidString,
     /// Attempted to end a node that was not the most recent.
@@ -65,6 +67,7 @@ impl fmt::Display for Error {
             }
             Error::PropertyValueTooLarge => write!(f, "Property value size must fit in 32 bits"),
             Error::TotalSizeTooLarge => write!(f, "Total size must fit in 32 bits"),
+            Error::TotalSizeTooSmall => write!(f, "Output size larger than requested total size"),
             Error::InvalidString => write!(f, "Strings cannot contain NUL"),
             Error::OutOfOrderEndNode => {
                 write!(f, "Attempted to end a node that was not the most recent")
@@ -110,6 +113,7 @@ pub struct FdtWriter {
     // The set is used to track the uniqueness of phandle values as required by the spec
     // https://devicetree-specification.readthedocs.io/en/stable/devicetree-basics.html#phandle
     phandles: HashSet<u32>,
+    total_size: Option<u32>,
 }
 
 /// Reserved physical memory region.
@@ -326,6 +330,12 @@ impl FdtWriter {
     /// Set the `last_comp_version` field of the devicetree header.
     pub fn set_last_comp_version(&mut self, last_comp_version: u32) {
         self.last_comp_version = last_comp_version;
+    }
+
+    /// Set the fixed total size of the DTB. Extend the output with zeros if the
+    /// data size is smaller, or return an error if the data doesn't fit.
+    pub fn set_total_size(&mut self, size: u32) {
+        self.total_size = Some(size);
     }
 
     // Append `num_bytes` padding bytes (0x00).
@@ -565,6 +575,14 @@ impl FdtWriter {
             .checked_add(self.strings.len())
             .ok_or(Error::TotalSizeTooLarge)?;
         let totalsize = totalsize.try_into().map_err(|_| Error::TotalSizeTooLarge)?;
+        let totalsize = if let Some(size) = self.total_size {
+            if size < totalsize {
+                return Err(Error::TotalSizeTooSmall);
+            }
+            size
+        } else {
+            totalsize
+        };
 
         // Finalize the header.
         self.update_u32(0, FDT_MAGIC);
@@ -580,6 +598,7 @@ impl FdtWriter {
 
         // Add the strings block.
         self.data.append(&mut self.strings);
+        self.data.resize(totalsize as usize, 0);
 
         Ok(self.data)
     }
