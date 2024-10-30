@@ -104,6 +104,8 @@ pub struct FdtWriter {
     string_offsets: BTreeMap<CString, u32>,
     node_depth: usize,
     node_ended: bool,
+    version: u32,
+    last_comp_version: u32,
     boot_cpuid_phys: u32,
     // The set is used to track the uniqueness of phandle values as required by the spec
     // https://devicetree-specification.readthedocs.io/en/stable/devicetree-basics.html#phandle
@@ -264,6 +266,8 @@ impl FdtWriter {
             node_depth: 0,
             node_ended: false,
             boot_cpuid_phys: 0,
+            version: FDT_VERSION,
+            last_comp_version: FDT_LAST_COMP_VERSION,
             phandles: HashSet::new(),
         };
 
@@ -312,6 +316,16 @@ impl FdtWriter {
     /// ```
     pub fn set_boot_cpuid_phys(&mut self, boot_cpuid_phys: u32) {
         self.boot_cpuid_phys = boot_cpuid_phys;
+    }
+
+    /// Set the `version` field of the devicetree header.
+    pub fn set_version(&mut self, version: u32) {
+        self.version = version;
+    }
+
+    /// Set the `last_comp_version` field of the devicetree header.
+    pub fn set_last_comp_version(&mut self, last_comp_version: u32) {
+        self.last_comp_version = last_comp_version;
     }
 
     // Append `num_bytes` padding bytes (0x00).
@@ -542,8 +556,8 @@ impl FdtWriter {
         self.update_u32(2 * 4, self.off_dt_struct);
         self.update_u32(3 * 4, off_dt_strings);
         self.update_u32(4 * 4, self.off_mem_rsvmap);
-        self.update_u32(5 * 4, FDT_VERSION);
-        self.update_u32(6 * 4, FDT_LAST_COMP_VERSION);
+        self.update_u32(5 * 4, self.version);
+        self.update_u32(6 * 4, self.last_comp_version);
         self.update_u32(7 * 4, self.boot_cpuid_phys);
         self.update_u32(8 * 4, size_dt_strings);
         self.update_u32(9 * 4, size_dt_struct);
