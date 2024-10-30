@@ -46,6 +46,8 @@ pub enum Error {
     InvalidMemoryReservation,
     /// Memory reservations are overlapping.
     OverlappingMemoryReservations,
+    /// Memory reservations must be aligned on 8 bytes.
+    UnalignedMemoryReservations,
     /// Invalid node name.
     InvalidNodeName,
     /// Invalid property name.
@@ -74,6 +76,9 @@ impl fmt::Display for Error {
             }
             Error::UnclosedNode => write!(f, "Attempted to call finish without ending all nodes"),
             Error::InvalidMemoryReservation => write!(f, "Memory reservation is invalid"),
+            Error::UnalignedMemoryReservations => {
+                write!(f, "Memory reservation must be aligned on 8 bytes")
+            }
             Error::OverlappingMemoryReservations => {
                 write!(f, "Memory reservations are overlapping")
             }
@@ -259,6 +264,20 @@ impl FdtWriter {
     ///
     /// `mem_reservations` - reserved physical memory regions to list in the FDT header.
     pub fn new_with_mem_reserv(mem_reservations: &[FdtReserveEntry]) -> Result<Self> {
+        Self::new_with_mem_reserv_padding(mem_reservations, 0)
+    }
+
+    /// Create a new Flattened Devicetree writer instance.
+    ///
+    /// # Arguments
+    ///
+    /// `mem_reservations` - reserved physical memory regions to list in the FDT header.
+    /// `padding` - additional space between the FDT header and the reserved
+    ///             physical memory region.
+    pub fn new_with_mem_reserv_padding(
+        mem_reservations: &[FdtReserveEntry],
+        padding: usize,
+    ) -> Result<Self> {
         let data = vec![0u8; FDT_HEADER_SIZE]; // Reserve space for header.
 
         let mut fdt = FdtWriter {
@@ -273,11 +292,22 @@ impl FdtWriter {
             version: FDT_VERSION,
             last_comp_version: FDT_LAST_COMP_VERSION,
             phandles: HashSet::new(),
+            total_size: None,
         };
 
+        if padding != 0 {
+            fdt.pad(padding);
+            if fdt.data.len() % 8 != 0 {
+                return Err(Error::UnalignedMemoryReservations);
+            }
+        }
+
         fdt.align(8);
-        // This conversion cannot fail since the size of the header is fixed.
-        fdt.off_mem_rsvmap = fdt.data.len() as u32;
+        fdt.off_mem_rsvmap = fdt
+            .data
+            .len()
+            .try_into()
+            .map_err(|_| Error::TotalSizeTooLarge)?;
 
         check_overlapping(mem_reservations)?;
         fdt.write_mem_rsvmap(mem_reservations);
