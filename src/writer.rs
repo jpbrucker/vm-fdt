@@ -402,6 +402,22 @@ impl FdtWriter {
         Ok(())
     }
 
+    /// Append the given strings. There may be more offsets than strings, if
+    /// some strings overlap in order to reuse suffixes.
+    pub fn add_strings(
+        &mut self,
+        offsets: BTreeMap<CString, u32>,
+        strings: Vec<CString>,
+    ) -> Result<()> {
+        for s in strings {
+            let bytes = s.to_bytes_with_nul();
+            self.strings.extend_from_slice(bytes);
+        }
+
+        self.string_offsets.extend(offsets);
+        Ok(())
+    }
+
     // Find an existing instance of a string `s`, or add it to the strings block.
     // Returns the offset into the strings block.
     fn intern_string(&mut self, s: CString) -> Result<u32> {
